@@ -1,0 +1,10 @@
+VAR A, B, C : LOGICAL;
+BEGIN
+    READ(A, C);
+    IF A .EQU. 1 THEN
+        B = 0;
+    ELSE
+        B = .NOT. (( A .OR. 1 ) .AND. .NOT. A);
+    END_IF;
+    WRITE(B, C);
+END 
