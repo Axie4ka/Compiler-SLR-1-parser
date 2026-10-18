@@ -78,6 +78,17 @@ namespace Translator
         // Источник текста выбран в меню: о запуске в DOSBox можно спросить
         private static bool interactive;
 
+        // Итоги этапов для сводки в конце вывода
+        // (null — этап не выполнялся из-за ошибок на предыдущем)
+        private static List<Diagnostic>? lexicalErrors;
+        private static List<Diagnostic>? syntaxErrors;
+        private static List<Diagnostic>? semanticErrors;
+        private static List<Diagnostic>? semanticWarnings;
+        private static string? postfixText;
+
+        // Сохранённая программа на ассемблере (null — не создана)
+        private static string? assemblyPath;
+
         static void Main(string[] args)
         {
             Console.OutputEncoding = System.Text.Encoding.UTF8;
@@ -115,6 +126,8 @@ namespace Translator
             Lexer lexer = new Lexer();
 
             lexer.Analyze(source);
+
+            lexicalErrors = lexer.Errors;
 
             PrintLexemes(lexer.Lexemes);
 
@@ -155,6 +168,11 @@ namespace Translator
             {
                 RunSyntaxAnalysis(lexer);
             }
+
+            PrintSummary();
+
+            if (assemblyPath != null)
+                BuildAndRun(assemblyPath);
 
             Console.WriteLine();
             Console.WriteLine("Работа завершена.");
@@ -467,6 +485,8 @@ namespace Translator
 
             bool ok = parser.Parse(lexer.Lexemes);
 
+            syntaxErrors = parser.Errors;
+
             Console.WriteLine();
             Console.WriteLine(" ПРОТОКОЛ РАЗБОРА");
             Console.WriteLine(
@@ -520,8 +540,13 @@ namespace Translator
 
             semantic.Analyze(tree);
 
+            semanticErrors = semantic.Errors;
+
             if (semantic.Errors.Count == 0)
             {
+                // Предупреждения собираются только при успешном анализе
+                semanticWarnings = semantic.Warnings;
+
                 Console.WriteLine("Семантических ошибок не обнаружено.");
             }
             else
@@ -571,7 +596,9 @@ namespace Translator
             }
 
             Console.WriteLine();
-            Console.WriteLine(string.Join(" ", postfix));
+            postfixText = string.Join(" ", postfix);
+
+            Console.WriteLine(postfixText);
 
             CodeGenerator codeGenerator = new CodeGenerator();
 
@@ -583,10 +610,48 @@ namespace Translator
             Console.WriteLine(" АССЕМБЛЕРНЫЙ КОД (x86, 16 бит, DOS)");
             Console.WriteLine(assembly);
 
-            string? asmPath = SaveAssembly(assembly);
+            assemblyPath = SaveAssembly(assembly);
+        }
 
-            if (asmPath != null)
-                BuildAndRun(asmPath);
+        // Сводка в конце вывода, до сборки: ошибки всех этапов подряд
+        // (или их отсутствие) и постфиксная запись
+        private static void PrintSummary()
+        {
+            Console.WriteLine();
+            Console.WriteLine(" ИТОГ");
+
+            PrintStageErrors("Лексические ошибки", lexicalErrors);
+            PrintStageErrors("Синтаксические ошибки", syntaxErrors);
+            PrintStageErrors("Семантические ошибки", semanticErrors);
+            PrintStageErrors(
+                "Предупреждения",
+                semanticWarnings,
+                "не определялись (нужен семантический анализ без ошибок).");
+
+            Console.WriteLine();
+            Console.WriteLine("Постфиксная запись:");
+            Console.WriteLine(
+                postfixText ?? "не построена: в программе есть ошибки.");
+        }
+
+        private static void PrintStageErrors(
+            string title,
+            List<Diagnostic>? errors,
+            string notRun = "этап не выполнялся.")
+        {
+            if (errors == null)
+            {
+                Console.WriteLine("{0}: {1}", title, notRun);
+            }
+            else if (errors.Count == 0)
+            {
+                Console.WriteLine("{0}: нет.", title);
+            }
+            else
+            {
+                Console.WriteLine("{0}:", title);
+                PrintDiagnostics(errors);
+            }
         }
 
         // Сборка программы (ml, link16) и запуск в DOSBox:
